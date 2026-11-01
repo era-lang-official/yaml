@@ -1,0 +1,141 @@
+// github.com/era-lang-official/yaml
+// Lightweight YAML 1.2 configuration parser and serializer
+
+fn yaml_str_find(s: string, sub: string) -> i64 {
+    let s_chars: Vec<char> = s.chars();
+    let sub_chars: Vec<char> = sub.chars();
+    if sub_chars.len() == 0 { return 0; }
+    if s_chars.len() < sub_chars.len() { return -1; }
+    let limit = (s_chars.len() - sub_chars.len()) + 1;
+    let mut i: usize = 0;
+    while i < limit {
+        let mut matched = true;
+        let mut j: usize = 0;
+        while j < sub_chars.len() {
+            if s_chars[i + j] != sub_chars[j] {
+                matched = false;
+                break;
+            }
+            j += 1;
+        }
+        if matched { return i as i64; }
+        i += 1;
+    }
+    return -1;
+}
+
+fn yaml_str_slice(s: string, start: usize, end: usize) -> string {
+    let s_chars: Vec<char> = s.chars();
+    let mut sb = StringBuilder::new();
+    let mut i = start;
+    let limit = if end > s_chars.len() { s_chars.len() } else { end };
+    while i < limit {
+        sb.append(s_chars[i].to_string());
+        i += 1;
+    }
+    return sb.to_string();
+}
+
+pub struct YamlPair {
+    pub key: string,
+    pub val: string,
+}
+
+pub struct YamlDoc {
+    pub pairs: Vec<YamlPair>,
+}
+
+impl YamlDoc {
+    pub fn new() -> YamlDoc {
+        return YamlDoc {
+            pairs: Vec::<YamlPair>::new(),
+        };
+    }
+
+    pub fn set(&mut self, key: string, val: string) {
+        let mut idx: usize = 0;
+        while idx < self.pairs.len() {
+            if self.pairs[idx].key == key {
+                self.pairs[idx].val = val;
+                return;
+            }
+            idx += 1;
+        }
+        self.pairs.push(YamlPair { key, val });
+    }
+
+    pub fn get(&self, key: string) -> Option<string> {
+        let mut idx: usize = 0;
+        while idx < self.pairs.len() {
+            if self.pairs[idx].key == key {
+                return Some(self.pairs[idx].val.clone());
+            }
+            idx += 1;
+        }
+        return None;
+    }
+
+    pub fn stringify(&self) -> string {
+        let mut sb = StringBuilder::new();
+        let mut idx: usize = 0;
+        while idx < self.pairs.len() {
+            let p = &self.pairs[idx];
+            sb.append(p.key.clone());
+            sb.append(": ");
+            sb.append(p.val.clone());
+            sb.append("\n");
+            idx += 1;
+        }
+        return sb.to_string();
+    }
+}
+
+pub fn parse_yaml(raw: string) -> Result<YamlDoc, string> {
+    let mut doc = YamlDoc::new();
+    let lines = raw.split("\n");
+    let mut current_prefix = "".to_string();
+
+    let mut i: usize = 0;
+    while i < lines.len() {
+        let line = lines[i].replace("\r", "");
+        let trimmed = line.trim();
+
+        // Skip blank lines and comments
+        if trimmed.len() == 0 || trimmed.starts_with("#") {
+            i += 1;
+            continue;
+        }
+
+        let is_indented = line.starts_with("  ") || line.starts_with("\t");
+
+        let colon_pos = yaml_str_find(trimmed.clone(), ":".to_string());
+        if colon_pos >= 0 {
+            let k = yaml_str_slice(trimmed.clone(), 0, colon_pos as usize).trim();
+            let v = yaml_str_slice(trimmed.clone(), (colon_pos + 1) as usize, trimmed.len()).trim();
+
+            if v.len() == 0 {
+                // Section header
+                current_prefix = k;
+            } else {
+                let mut full_key = k.clone();
+                if is_indented && current_prefix.len() > 0 {
+                    full_key = current_prefix.clone() + "." + k;
+                } else if !is_indented {
+                    current_prefix = "".to_string();
+                }
+
+                // Strip quotes if present
+                let mut clean_val = v.clone();
+                if (clean_val.starts_with("\"") && clean_val.ends_with("\"")) ||
+                   (clean_val.starts_with("'") && clean_val.ends_with("'")) {
+                    clean_val = yaml_str_slice(clean_val.clone(), 1, clean_val.len() - 1);
+                }
+
+                doc.set(full_key, clean_val);
+            }
+        }
+        i += 1;
+    }
+
+    return Ok(doc);
+}
